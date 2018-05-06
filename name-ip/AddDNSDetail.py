@@ -35,7 +35,7 @@ from dateutil import parser as dparser  # for parsing time from comand line and 
 
 
 # command line arg handling 
-argparser=argparse.ArgumentParser(description='take two csvs, join them on columns c,d and write to output') 
+argparser=argparse.ArgumentParser(description='Read a CSV, one (default last) column of which is a domain name, then append a bunch of DNS derived values to the row and write out to the output file')
 argparser.add_argument('-i','--infile',     
                     dest='infile',
                     help='CSV file containing list of domains')
@@ -74,6 +74,8 @@ queries = [ "A", "AAAA", "MX", "DS", "CAA", "SPF", "TXT" ]
 of=open(args.outfile,'w')
 wr=csv.writer(of)
 
+count=0
+
 with open(args.infile, 'r') as f:
     r = csv.reader(f)
     for row in r:
@@ -109,6 +111,9 @@ with open(args.infile, 'r') as f:
                 domarr.append(pas)
         #print row
         wr.writerow(row)
+        count += 1
+        if count % 10 == 0:
+            print >>sys.stderr, "Did " + str(count) + " last: " + dom
 
 of.close()
 
