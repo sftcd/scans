@@ -32,7 +32,20 @@ import json
 import jsonpickle # install via  "$ sudo pip install -U jsonpickle"
 import time, datetime
 from dateutil import parser as dparser  # for parsing time from comand line and certs
+import pytz # for adding back TZ info to allow comparisons
 import subprocess
+
+# from https://github.com/sftcd/surveys ...
+# locally in $HOME/code/surveys
+def_surveydir=os.environ['HOME']+'/code/surveys'
+sys.path.insert(0,def_surveydir)
+
+#codedir=os.path.dirname(os.path.realpath(__file__))
+#pdir=os.path.dirname(codedir)
+#sys.path.insert(0,pdir)
+
+from SurveyFuncs import *
+
 
 myResolver = dns.resolver.Resolver() #create a new instance named 'myResolver'
 
@@ -47,7 +60,23 @@ argparser.add_argument('-o','--output_file',
 argparser.add_argument('-c','--col',     
                     dest='col',
                     help='column from input file that has the URL')
+argparser.add_argument('-s','--scandate',     
+                    dest='scandatestring',
+                    help='time at which to evaluate certificate validity')
 args=argparser.parse_args()
+
+# scandate is needed to determine certificate validity, so we support
+# the option to now use "now"
+if args.scandatestring is None:
+    scandate=datetime.datetime.utcnow().replace(tzinfo=pytz.UTC)
+    #print >> sys.stderr, "No (or bad) scan time provided, using 'now'"
+else:
+    scandate=dparser.parse(args.scandatestring).replace(tzinfo=pytz.UTC)
+    print >> sys.stderr, "Scandate: using " + args.scandatestring + "\n"
+
+
+def_country='IE'
+country=def_country
 
 def usage():
     print >>sys.stderr, "usage: " + sys.argv[0] + " -i <in.csv> -o <out.csv> [-c <col1>]"
@@ -79,7 +108,7 @@ ztimeout=' --timeout 2'
 # port parameters
 pparms={ 
         '80': '-port 80',
-        '443-no-sni': '--port 443 --lookup-domain --tls',
+        '443-with-sni': '--port 443 --lookup-domain --tls',
         '443': '-port 443 -tls',
         }
 
@@ -87,6 +116,7 @@ with open(args.infile, 'r') as f:
     r = csv.reader(f)
     for row in r:
         url=row[col]
+        analysis={}
         if url is None or url=='':
             # add dummy cols to row, not sure how many yet
             pass
@@ -110,13 +140,15 @@ with open(args.infile, 'r') as f:
                 addr=rdata
             #print "addr: " + str(addr)
             # do HTTP, then HTTP and TLS with SNI, then HTTP and TLS without SNI
-            for port in [ "80", "443", "443-no-sni" ]:
+            for port in [ "80", "443", "443-with-sni" ]:
+                analysis[port]={}
+                analysis[port]['names']={}
                 try:
                     cmd='zgrab '+  pparms[port] + " -http " + path + " " + ztimeout
                     #print "cmd: " + cmd
                     proc=subprocess.Popen(cmd.split(),stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
                     # 443 is different due to SNI, need to provide host, not address
-                    if port=='443-no-sni':
+                    if port=='443-with-sni':
                         #print "doing: port: " + port + " |" + host + "| " + cmd
                         # man it took me a while to figure that "\n" below was needed;-(
                         pc=proc.communicate(input=host + "\n")
@@ -127,19 +159,25 @@ with open(args.infile, 'r') as f:
                     #print "pc: " + str(pc)
                     jinfo=json.loads(lines[1])
                     jres=json.loads(lines[0])
-                    print jsonpickle.encode(jres)
                     if port=='80':
                         # store at least http response code
+                        jres['host']=host
                         pass
-                    elif port=='443-no-sni':
-                        pass
-                    elif port=='443':
-                        #print lines
-                        pass
-
+                    elif port=='443-with-sni' or port=='443':
+                        jres['ip']=str(addr)
+                        jres['host']=host
+                        th=jres['data']['http']['response']['request']['tls_handshake']
+                        fp=th['server_certificates']['certificate']['parsed']['subject_key_info']['fingerprint_sha256'] 
+                        cert=th['server_certificates']['certificate']
+                        analysis[port]['fp']=fp
+                        #print jsonpickle.encode(th)
+                        get_tls('FreshGrab.py',port,th,jres['ip'],analysis[port],scandate)
+                        get_certnames(port,cert,analysis[port]['names'])
                 except Exception as e:
                     print >>sys.stderr, sys.argv[0] + " exception:" + str(e)
         #print row
+        print "Analysis:" 
+        print jsonpickle.encode(analysis)
         wr.writerow(row)
         count += 1
         sys.exit(0)
