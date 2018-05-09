@@ -70,12 +70,16 @@ wr=csv.writer(of)
 
 count=0
 
+# encoder options
+jsonpickle.set_encoder_options('json', sort_keys=True, indent=2)
+jsonpickle.set_encoder_options('simplejson', sort_keys=True, indent=2)
+
 # default timeout for zgrab, in seconds
-ztimeout=' -timeout 2'
+ztimeout=' --timeout 2'
 # port parameters
 pparms={ 
         '80': '-port 80',
-        '443-no-sni': '-port 443 -tls -no-sni',
+        '443-no-sni': '--port 443 --lookup-domain --tls',
         '443': '-port 443 -tls',
         }
 
@@ -98,30 +102,39 @@ with open(args.infile, 'r') as f:
             else:
                 host=url[hoststart:hostend]
                 path=url[hostend:]
-            print str(hoststart), str(hostend), host, path
+            #print str(hoststart), str(hostend), host, path
             # figure IP addr from hostname
             answer = myResolver.query(host, "A") 
             for rdata in answer: 
                 #pick last one
                 addr=rdata
-            print "addr: " + str(addr)
+            #print "addr: " + str(addr)
             # do HTTP, then HTTP and TLS with SNI, then HTTP and TLS without SNI
-            for port in [ "80", "443-no-sni", "443" ]:
+            for port in [ "80", "443", "443-no-sni" ]:
                 try:
                     cmd='zgrab '+  pparms[port] + " -http " + path + " " + ztimeout
-                    print "cmd: " + cmd
+                    #print "cmd: " + cmd
                     proc=subprocess.Popen(cmd.split(),stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
-                    pc=proc.communicate(input=str(addr).encode())
+                    # 443 is different due to SNI, need to provide host, not address
+                    if port=='443-no-sni':
+                        #print "doing: port: " + port + " |" + host + "| " + cmd
+                        # man it took me a while to figure that "\n" below was needed;-(
+                        pc=proc.communicate(input=host + "\n")
+                    else:
+                        #print "doing: port: " + port + " |" + str(addr) + "| " + cmd
+                        pc=proc.communicate(input=str(addr).encode())
                     lines=pc[0].split('\n')
+                    #print "pc: " + str(pc)
                     jinfo=json.loads(lines[1])
                     jres=json.loads(lines[0])
-                    print jres
+                    print jsonpickle.encode(jres)
                     if port=='80':
                         # store at least http response code
                         pass
                     elif port=='443-no-sni':
                         pass
                     elif port=='443':
+                        #print lines
                         pass
 
                 except Exception as e:
@@ -129,6 +142,7 @@ with open(args.infile, 'r') as f:
         #print row
         wr.writerow(row)
         count += 1
+        sys.exit(0)
         if count % 10 == 0:
             print >>sys.stderr, "Did " + str(count) + " last: " + url
             # debug exit
