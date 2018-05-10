@@ -139,6 +139,8 @@ with open(args.infile, 'r') as f:
                 #pick last one
                 addr=rdata
             #print "addr: " + str(addr)
+            analysis['ip']=str(addr)
+            analysis['host']=host
             # do HTTP, then HTTP and TLS with SNI, then HTTP and TLS without SNI
             for port in [ "80", "443", "443-with-sni" ]:
                 analysis[port]={}
@@ -159,6 +161,7 @@ with open(args.infile, 'r') as f:
                     #print "pc: " + str(pc)
                     jinfo=json.loads(lines[1])
                     jres=json.loads(lines[0])
+                    analysis[port]['status_code']=jres['data']['http']['response']['status_code']
                     if port=='80':
                         # store at least http response code
                         jres['host']=host
