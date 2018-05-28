@@ -78,6 +78,19 @@ else:
 def_country='IE'
 country=def_country
 
+# take our json analysis structure and return it as a list of values
+# for inclusion in a csv file row
+def j2c(j):
+    csvals=[]
+    for port in [ "80", "443", "443-with-sni" ]:
+        try:
+            for k in j[port]:
+                csvals.append(str(j[port][k]))
+        except:
+            csvals.append("")
+    #print "csvals: |" + str(csvals) + "|"
+    return csvals
+
 def usage():
     print >>sys.stderr, "usage: " + sys.argv[0] + " -i <in.csv> -o <out.csv> [-c <col1>]"
     print >>sys.stderr, "    Read a CSV, one (default last) column of which is a URL, then append a "
@@ -161,29 +174,44 @@ with open(args.infile, 'r') as f:
                     #print "pc: " + str(pc)
                     jinfo=json.loads(lines[1])
                     jres=json.loads(lines[0])
+                    body=jres['data']['http']['response']['body']
                     analysis[port]['status_code']=jres['data']['http']['response']['status_code']
+                    # put host in there, as it's not by default if we didn't use it
+                    jres['host']=host
+                    jres['ip']=str(addr)
+                    # also put it into port specifics, as we'll flatten that in a 'mo
+                    analysis[port]['host']=host
+                    analysis[port]['ip']=str(addr)
+                    analysis[port]['body_len']=len(body)
                     if port=='80':
-                        # store at least http response code
-                        jres['host']=host
+                        # do any port 80 specifics
                         pass
                     elif port=='443-with-sni' or port=='443':
-                        jres['ip']=str(addr)
-                        jres['host']=host
+                        # do tls specifics
                         th=jres['data']['http']['response']['request']['tls_handshake']
                         fp=th['server_certificates']['certificate']['parsed']['subject_key_info']['fingerprint_sha256'] 
                         cert=th['server_certificates']['certificate']
                         analysis[port]['fp']=fp
                         #print jsonpickle.encode(th)
                         get_tls('FreshGrab.py',port,th,jres['ip'],analysis[port],scandate)
-                        get_certnames(port,cert,analysis[port]['names'])
+                        names={}
+                        get_certnames(port,cert,names)
+                        # flatten out them there names
+                        flatnames=""
+                        for k in names:
+                            flatnames += str(names[k])
+                            flatnames += ";"
+                        analysis[port]['names']=flatnames
                 except Exception as e:
                     print >>sys.stderr, sys.argv[0] + " exception:" + str(e)
+                    print >>sys.stderr, "host: " + host + "port: " + port 
         #print row
-        print "Analysis:" 
-        print jsonpickle.encode(analysis)
+        #print "Analysis:" 
+        #print jsonpickle.encode(analysis)
+        row += j2c(analysis)
+        print row
         wr.writerow(row)
         count += 1
-        sys.exit(0)
         if count % 10 == 0:
             print >>sys.stderr, "Did " + str(count) + " last: " + url
             # debug exit
