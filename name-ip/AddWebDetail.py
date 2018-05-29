@@ -78,18 +78,53 @@ else:
 def_country='IE'
 country=def_country
 
-# take our json analysis structure and return it as a list of values
-# for inclusion in a csv file row
-def j2c(j):
-    csvals=[]
-    for port in [ "80", "443", "443-with-sni" ]:
-        try:
-            for k in j[port]:
-                csvals.append(str(j[port][k]))
-        except:
-            csvals.append("")
-    #print "csvals: |" + str(csvals) + "|"
-    return csvals
+def wr_dummy(row,wr):
+    dummy=[]
+    # port 80
+    # analysis[port]['status_code']=-1
+    dummy.append(-1)
+    # analysis[port]['body_len']=-1
+    dummy.append(-1)
+    # port 443, no SNI
+    # analysis[port]['status_code']=-1
+    dummy.append(-1)
+    # analysis[port]['body_len']=-1
+    dummy.append(-1)
+    # analysis[port]['names']=''
+    dummy.append('')
+    # analysis[port]['fp']=''
+    dummy.append('')
+    # analysis[port]['timely']=-1
+    dummy.append(-1)
+    # analysis[port]['self_signed']=-1
+    dummy.append(-1)
+    # analysis[port]['rsalen']=-1
+    dummy.append(-1)
+    # analysis[port]['cipher_suite']=-1
+    dummy.append(-1)
+    # analysis[port]['browser_trusted']=-1
+    dummy.append(-1)
+    # port 443, with SNI
+    # analysis[port]['status_code']=-1
+    dummy.append(-1)
+    # analysis[port]['body_len']=-1
+    dummy.append(-1)
+    # analysis[port]['names']=''
+    dummy.append('')
+    # analysis[port]['fp']=''
+    dummy.append('')
+    # analysis[port]['timely']=-1
+    dummy.append(-1)
+    # analysis[port]['self_signed']=-1
+    dummy.append(-1)
+    # analysis[port]['rsalen']=-1
+    dummy.append(-1)
+    # analysis[port]['cipher_suite']=-1
+    dummy.append(-1)
+    # analysis[port]['browser_trusted']=-1
+    dummy.append(-1)
+    row += dummy
+    wr.writerow(row)
 
 def usage():
     print >>sys.stderr, "usage: " + sys.argv[0] + " -i <in.csv> -o <out.csv> [-c <col1>]"
@@ -131,13 +166,14 @@ with open(args.infile, 'r') as f:
         url=row[col]
         analysis={}
         if url is None or url=='':
-            # add dummy cols to row, not sure how many yet
-            pass
+            print "Row " + str(count) + " has an empty URL"
+            # add dummy cols to row, 
+            wr_dummy(row,wr)
         else:
             print "Doing " + url
             # figure hostname from url
             # and figure pathname from url
-            hoststart=url.find("//")+1
+            hoststart=url.find("//")+2
             hostend=url.find("/",hoststart+1)
             if hostend==-1:
                 host=url[hoststart:]
@@ -147,17 +183,38 @@ with open(args.infile, 'r') as f:
                 path=url[hostend:]
             #print str(hoststart), str(hostend), host, path
             # figure IP addr from hostname
-            answer = myResolver.query(host, "A") 
-            for rdata in answer: 
-                #pick last one
-                addr=rdata
+            try:
+                answer = myResolver.query(host, "A") 
+                for rdata in answer: 
+                    #pick last one
+                    addr=rdata
+            except:
+                wr_dummy(row,wr)
+                print >>sys.stderr, sys.argv[0] + " DNS exception:" + str(e) + "host: " + host 
+                # we're done with this host...
+                continue
             #print "addr: " + str(addr)
             analysis['ip']=str(addr)
             analysis['host']=host
+            # place to accumulate values for csv row
+            csvals=[]
             # do HTTP, then HTTP and TLS with SNI, then HTTP and TLS without SNI
             for port in [ "80", "443", "443-with-sni" ]:
                 analysis[port]={}
-                analysis[port]['names']={}
+                # fill in what we can or a dummy value so csv col count is ok
+                # even if we hit an exception
+                analysis[port]['host']=host
+                analysis[port]['ip']=str(addr)
+                analysis[port]['status_code']=-1
+                analysis[port]['body_len']=-1
+                analysis[port]['names']=''
+                analysis[port]['fp']=''
+                analysis[port]['timely']=-1
+                analysis[port]['self_signed']=-1
+                analysis[port]['rsalen']=-1
+                analysis[port]['cipher_suite']=-1
+                analysis[port]['browser_trusted']=-1
+
                 try:
                     cmd='zgrab '+  pparms[port] + " -http " + path + " " + ztimeout
                     #print "cmd: " + cmd
@@ -180,8 +237,6 @@ with open(args.infile, 'r') as f:
                     jres['host']=host
                     jres['ip']=str(addr)
                     # also put it into port specifics, as we'll flatten that in a 'mo
-                    analysis[port]['host']=host
-                    analysis[port]['ip']=str(addr)
                     analysis[port]['body_len']=len(body)
                     if port=='80':
                         # do any port 80 specifics
@@ -193,7 +248,9 @@ with open(args.infile, 'r') as f:
                         cert=th['server_certificates']['certificate']
                         analysis[port]['fp']=fp
                         #print jsonpickle.encode(th)
+                        # get_tls is from the surveys repo
                         get_tls('FreshGrab.py',port,th,jres['ip'],analysis[port],scandate)
+                        #print analysis[port]
                         names={}
                         get_certnames(port,cert,names)
                         # flatten out them there names
@@ -203,19 +260,34 @@ with open(args.infile, 'r') as f:
                             flatnames += ";"
                         analysis[port]['names']=flatnames
                 except Exception as e:
-                    print >>sys.stderr, sys.argv[0] + " exception:" + str(e)
-                    print >>sys.stderr, "host: " + host + "port: " + port 
-        #print row
-        #print "Analysis:" 
-        #print jsonpickle.encode(analysis)
-        row += j2c(analysis)
-        print row
-        wr.writerow(row)
+                    print >>sys.stderr, sys.argv[0] + " exception:" + str(e) + "host: " + host + " port: " + port 
+
+                # accumulate columns for csv
+                # basic info for all ports
+                csvals.append(analysis[port]['status_code'])
+                csvals.append(analysis[port]['body_len'])
+                if port != "80":
+                    # add TLS stuff
+                    csvals.append(analysis[port]['names'])
+                    csvals.append(analysis[port]['fp'])
+                    csvals.append(analysis[port]['timely'])
+                    csvals.append(analysis[port]['self_signed'])
+                    csvals.append(analysis[port]['rsalen'])
+                    csvals.append(analysis[port]['cipher_suite'])
+                    csvals.append(analysis[port]['browser_trusted'])
+
+            #print row
+            #print "Analysis:" 
+            #print jsonpickle.encode(analysis)
+            #print row
+            row += csvals
+            wr.writerow(row)
+
         count += 1
         if count % 10 == 0:
             print >>sys.stderr, "Did " + str(count) + " last: " + url
             # debug exit
-            sys.exit(0)
+            # sys.exit(0)
 
 of.close()
 
