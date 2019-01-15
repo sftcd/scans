@@ -24,7 +24,7 @@
 # a bunch of DNS derived values to the row and write out to the output file
 
 import csv
-import dns.resolver #import the module
+import dns.resolver #import the module  sudo -H pip install dnspython
 import pyping
 
 import os, sys, argparse, tempfile, gc
