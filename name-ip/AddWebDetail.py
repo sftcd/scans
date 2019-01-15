@@ -173,15 +173,20 @@ with open(args.infile, 'r') as f:
             print "Doing " + url
             # figure hostname from url
             # and figure pathname from url
-            hoststart=url.find("//")+2
-            hostend=url.find("/",hoststart+1)
-            if hostend==-1:
-                host=url[hoststart:]
-                path='/'
+            if "//" in url:
+                hoststart=url.find("//")+2
+                hostend=url.find("/",hoststart+1)
+                if hostend==-1:
+                    host=url[hoststart:]
+                    path='/'
+                else:
+                    host=url[hoststart:hostend]
+                    path=url[hostend:]
+                #print str(hoststart), str(hostend), host, path
             else:
-                host=url[hoststart:hostend]
-                path=url[hostend:]
-            #print str(hoststart), str(hostend), host, path
+                # assume DNS name
+                host=url
+                path='/'
             # figure IP addr from hostname
             try:
                 answer = myResolver.query(host, "A") 
