@@ -24,8 +24,8 @@
 # a bunch of DNS derived values to the row and write out to the output file
 
 import csv
-import dns.resolver #import the module  sudo -H pip install dnspython
-import pyping
+import dns.resolver # install via: sudo apt install python-dnspython; sudo -H pip install dnspython
+import pyping # install via: sudo -H pip install pyping
 
 import os, sys, argparse, tempfile, gc
 import json

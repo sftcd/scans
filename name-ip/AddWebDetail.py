@@ -152,7 +152,7 @@ jsonpickle.set_encoder_options('json', sort_keys=True, indent=2)
 jsonpickle.set_encoder_options('simplejson', sort_keys=True, indent=2)
 
 # default timeout for zgrab, in seconds
-ztimeout=' --timeout 2'
+ztimeout=' --timeout 4'
 # port parameters
 pparms={ 
         '80': '-port 80',
@@ -236,36 +236,58 @@ with open(args.infile, 'r') as f:
                     #print "pc: " + str(pc)
                     jinfo=json.loads(lines[1])
                     jres=json.loads(lines[0])
-                    body=jres['data']['http']['response']['body']
-                    analysis[port]['status_code']=jres['data']['http']['response']['status_code']
+                    if 'response' in jres['data']['http']:
+                        body=jres['data']['http']['response']['body']
+                        analysis[port]['status_code']=jres['data']['http']['response']['status_code']
+                    elif 'error' in jres:
+                        print >>sys.stderr, "Error doing " + str(addr) + ":"+ port + " " + cmd
+                        body=jres['error']
+                        analysis[port]['status_code']=999
+                    else:
+                        print >>sys.stderr, "Unknown error doing " + str(addr) + ":"+ port + " " + cmd
+                        print >>sys.stderr, jres
+                        print >>sys.stderr, jinfo
+                        body="Unknown"
+                        analysis[port]['status_code']=666
                     # put host in there, as it's not by default if we didn't use it
                     jres['host']=host
                     jres['ip']=str(addr)
                     # also put it into port specifics, as we'll flatten that in a 'mo
-                    analysis[port]['body_len']=len(body)
                     if port=='80':
                         # do any port 80 specifics
                         pass
                     elif port=='443-with-sni' or port=='443':
                         # do tls specifics
-                        th=jres['data']['http']['response']['request']['tls_handshake']
-                        fp=th['server_certificates']['certificate']['parsed']['subject_key_info']['fingerprint_sha256'] 
-                        cert=th['server_certificates']['certificate']
-                        analysis[port]['fp']=fp
-                        #print jsonpickle.encode(th)
-                        # get_tls is from the surveys repo
-                        get_tls('FreshGrab.py',port,th,jres['ip'],analysis[port],scandate)
-                        #print analysis[port]
-                        names={}
-                        get_certnames(port,cert,names)
-                        # flatten out them there names
-                        flatnames=""
-                        for k in names:
-                            flatnames += str(names[k])
-                            flatnames += ";"
-                        analysis[port]['names']=flatnames
+                        if 'response' in jres['data']['http']:
+                            th=jres['data']['http']['response']['request']['tls_handshake']
+                            fp=th['server_certificates']['certificate']['parsed']['subject_key_info']['fingerprint_sha256'] 
+                            cert=th['server_certificates']['certificate']
+                            analysis[port]['fp']=fp
+                            #print jsonpickle.encode(th)
+                            # get_tls is from the surveys repo
+                            get_tls('FreshGrab.py',port,th,jres['ip'],analysis[port],scandate)
+                            #print analysis[port]
+                            names={}
+                            get_certnames(port,cert,names)
+                            # flatten out them there names
+                            flatnames=""
+                            for k in names:
+                                flatnames += str(names[k])
+                                flatnames += ";"
+                            analysis[port]['names']=flatnames
+                        elif 'error' in jres:
+                            print >>sys.stderr, "Error doing " + str(addr) + ":"+ port + " " + cmd
+                            body=jres['error']
+                            print body
+                            analysis[port]['status_code']=999
+                        else:
+                            body="Unknown"
+                            analysis[port]['status_code']=666
+                    analysis[port]['body_len']=len(body)
                 except Exception as e:
-                    print >>sys.stderr, sys.argv[0] + " exception:" + str(e) + "host: " + host + " port: " + port 
+                    print >>sys.stderr, sys.argv[0] + " exception: " + str(e) + "host: " + host + " port: " + port 
+                    print "pc: " + str(pc)
+                    sys.exit(1)
 
                 # accumulate columns for csv
                 # basic info for all ports
