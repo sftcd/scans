@@ -221,8 +221,9 @@ with open(args.infile, 'r') as f:
                 analysis[port]['browser_trusted']=-1
 
                 try:
+                    reserr=False # set if we don't get an HTTP response
                     cmd='zgrab '+  pparms[port] + " -http " + path + " " + ztimeout
-                    #print "cmd: " + cmd
+                    print "cmd: " + cmd
                     proc=subprocess.Popen(cmd.split(),stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
                     # 443 is different due to SNI, need to provide host, not address
                     if port=='443-with-sni':
@@ -240,15 +241,17 @@ with open(args.infile, 'r') as f:
                         body=jres['data']['http']['response']['body']
                         analysis[port]['status_code']=jres['data']['http']['response']['status_code']
                     elif 'error' in jres:
-                        print >>sys.stderr, "Error doing " + str(addr) + ":"+ port + " " + cmd
+                        print >>sys.stderr, "Error1 doing " + str(addr) + ":"+ port + " " + cmd
                         body=jres['error']
                         analysis[port]['status_code']=999
+                        reserr=True
                     else:
                         print >>sys.stderr, "Unknown error doing " + str(addr) + ":"+ port + " " + cmd
                         print >>sys.stderr, jres
                         print >>sys.stderr, jinfo
                         body="Unknown"
                         analysis[port]['status_code']=666
+                        reserr=True
                     # put host in there, as it's not by default if we didn't use it
                     jres['host']=host
                     jres['ip']=str(addr)
@@ -256,7 +259,7 @@ with open(args.infile, 'r') as f:
                     if port=='80':
                         # do any port 80 specifics
                         pass
-                    elif port=='443-with-sni' or port=='443':
+                    elif reserr == False and (port=='443-with-sni' or port=='443'):
                         # do tls specifics
                         if 'response' in jres['data']['http']:
                             th=jres['data']['http']['response']['request']['tls_handshake']
@@ -276,7 +279,7 @@ with open(args.infile, 'r') as f:
                                 flatnames += ";"
                             analysis[port]['names']=flatnames
                         elif 'error' in jres:
-                            print >>sys.stderr, "Error doing " + str(addr) + ":"+ port + " " + cmd
+                            print >>sys.stderr, "Error2 doing " + str(addr) + ":"+ port + " " + cmd
                             body=jres['error']
                             print body
                             analysis[port]['status_code']=999
